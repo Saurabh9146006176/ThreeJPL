@@ -1,0 +1,62 @@
+[
+  {
+    "id": "t1",
+    "name": "TJ Realty",
+    "captainName": "Mr. Dnyanesh Jadhavrao",
+    "viceCaptainName": "Shaunak"
+  },
+  {
+    "id": "t2",
+    "name": "TJ Super Strikers",
+    "captainName": "Mr. Dhiraj Oswal",
+    "viceCaptainName": "Omkar Kalje"
+  },
+  {
+    "id": "t3",
+    "name": "TJ Hurricanes",
+    "captainName": "Mr Suryakant Khuruse",
+    "viceCaptainName": "Kunal"
+  },
+  {
+    "id": "t4",
+    "name": "TJ Hurricanes",
+    "captainName": "Mr. Abhijeet Jadhavrao",
+    "viceCaptainName": "Omi Anandas"
+  },
+  {
+    "id": "t5",
+    "name": "TJ Kings",
+    "captainName": "Chaitanya Korake",
+    "viceCaptainName": "Utkarsh Kashid"
+  },
+  {
+    "id": "t6",
+    "name": "TJ Motors",
+    "captainName": "Manoj Kashid",
+    "viceCaptainName": "Aniruddh"
+  },
+  {
+    "id": "t7",
+    "name": "TJ Smashers",
+    "captainName": "Kshitij",
+    "viceCaptainName": "Sahil Patil"
+  },
+  {
+    "id": "t8",
+    "name": "TJ Power Strikers",
+    "captainName": "Dipen Shah",
+    "viceCaptainName": "Shubham Bakare"
+  },
+  {
+    "id": "t9",
+    "name": "TJ DOSATSU",
+    "captainName": "Prof. Sarang A. Dani",
+    "viceCaptainName": "Sagar Patil"
+  },
+  {
+    "id": "t10",
+    "name": "TJ Panthers",
+    "captainName": "Somnath Patil",
+    "viceCaptainName": "Karan Shah"
+  }
+]

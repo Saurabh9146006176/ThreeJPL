@@ -1,0 +1,5 @@
+{
+  "name": "Premier League Auctioneer",
+  "description": "A comprehensive sports auction management system designed for local use. Manages teams, players, purses, and complex bidding logic with dynamic max-bid calculations.",
+  "requestFramePermissions": []
+}

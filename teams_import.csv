@@ -1,0 +1,11 @@
+id,name,captainName,captainMobile,captainPhotoUrl,viceCaptainName,viceCaptainMobile,viceCaptainPhotoUrl,purseRemaining,playersBought,logoColor
+t1,TJ Realty,Mr. Dnyanesh Jadhavrao,,,"Shaunak",,,1000000,[],bg-blue-500
+t2,TJ Super Strikers,Mr. Dhiraj Oswal,,,"Omkar Kalje",,,1000000,[],bg-green-500
+t3,TJ Hurricanes,Mr Suryakant Khuruse,,,"Kunal",,,1000000,[],bg-purple-500
+t4,TJ Hurricanes,Mr. Abhijeet Jadhavrao,,,"Omi Anandas",,,1000000,[],bg-red-500
+t5,TJ Kings,Chaitanya Korake,,,"Utkarsh Kashid",,,1000000,[],bg-yellow-500
+t6,TJ Motors,Manoj Kashid,,,"Aniruddh",,,1000000,[],bg-indigo-500
+t7,TJ Smashers,Kshitij,,,"Sahil Patil",,,1000000,[],bg-pink-500
+t8,TJ Power Strikers,Dipen Shah,,,"Shubham Bakare",,,1000000,[],bg-cyan-500
+t9,TJ DOSATSU,Prof. Sarang A. Dani,,,"Sagar Patil",,,1000000,[],bg-orange-500
+t10,TJ Panthers,Somnath Patil,,,"Karan Shah",,,1000000,[],bg-teal-500

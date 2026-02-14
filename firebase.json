@@ -1,0 +1,21 @@
+{
+  "functions": {
+    "source": "functions",
+    "runtime": "python312"
+  },
+  "hosting": {
+    "site": "tjplcricket",
+    "public": "dist",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}
