@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { ViewState, Team, Player, AuctionSettings, ConfirmAction, PlayerRole, ExperienceLevel } from '../types';
-import { Gavel, Users, User, LayoutDashboard, Download, Upload, Trash2, Settings, ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
-import { exportDataToJSON, resetData } from '../services/storageService';
+import { Gavel, Users, User, LayoutDashboard, Download, Upload, Trash2, Settings, ChevronLeft, ChevronRight, LogOut, Shield } from 'lucide-react';
+import { exportDataToJSON, resetData, getCurrentUserRole } from '../services/storageService';
 
 interface SidebarProps {
   currentView: ViewState;
@@ -320,6 +320,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <Settings size={20} className={currentView === 'SETTINGS' ? 'text-cyan-400' : 'group-hover:text-white'} />
           {!isCollapsed && <span>Configuration</span>}
         </button>
+
+        {getCurrentUserRole() === 'admin' && (
+          <button onClick={() => setView('ADMIN')} className={navItemClass('ADMIN')}>
+            <Shield size={20} className={currentView === 'ADMIN' ? 'text-cyan-400' : 'group-hover:text-white'} />
+            {!isCollapsed && <span>Admin Panel</span>}
+          </button>
+        )}
       </nav>
 
       {/* Footer / Data Actions */}

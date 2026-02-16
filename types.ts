@@ -43,7 +43,7 @@ export interface AuctionSettings {
   bidIncrement3: number; // For bids > 5L
 }
 
-export type ViewState = 'DASHBOARD' | 'TEAMS' | 'PLAYERS' | 'AUCTION' | 'SETTINGS';
+export type ViewState = 'DASHBOARD' | 'TEAMS' | 'PLAYERS' | 'AUCTION' | 'SETTINGS' | 'ADMIN';
 
 export interface AuctionState {
   currentPlayerId: string | null;

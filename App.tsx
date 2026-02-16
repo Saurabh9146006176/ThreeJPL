@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { ViewState, Team, Player, AuctionSettings, ConfirmAction } from './types';
-import { loadTeams, loadPlayers, loadSettings, saveTeams, savePlayers, saveSettings } from './services/storageService';
+import { loadTeams, loadPlayers, loadSettings, saveTeams, savePlayers, saveSettings, login, logout, getCurrentUserEmail, getCurrentUserRole, isAuthenticated, register } from './services/storageService';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './pages/Dashboard';
 import { TeamsPage } from './pages/TeamsPage';
 import { PlayersPage } from './pages/PlayersPage';
 import { AuctionPage } from './pages/AuctionPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { AdminPage } from './pages/AdminPage';
 import { LoginPage } from './pages/LoginPage';
 import { ConfirmationModal } from './components/ConfirmationModal';
 import { DEFAULT_SETTINGS, DEMO_TEAMS, DEMO_PLAYERS } from './constants';
@@ -67,22 +68,26 @@ const App: React.FC = () => {
   // Load Data on Mount
   useEffect(() => {
     const loadData = async () => {
-      const loadedTeams = await loadTeams();
-      const loadedPlayers = await loadPlayers();
-      const loadedSettings = await loadSettings();
-      
-      setTeams(loadedTeams);
-      setPlayers(loadedPlayers);
-      setSettings(loadedSettings);
+      if (isAuthenticated) {
+        const loadedTeams = await loadTeams();
+        const loadedPlayers = await loadPlayers();
+        const loadedSettings = await loadSettings();
+        
+        setTeams(loadedTeams);
+        setPlayers(loadedPlayers);
+        setSettings(loadedSettings);
+      }
       
       setLoading(false);
     };
-    loadData();
-  }, []);
+    if (authChecked) {
+      loadData();
+    }
+  }, [authChecked, isAuthenticated]);
 
   // Save Data whenever it changes, but ONLY after loading is complete
   useEffect(() => {
-    if (!loading) {
+    if (!loading && isAuthenticated) {
       const saveData = async () => {
         await saveTeams(teams);
         await savePlayers(players);
@@ -90,22 +95,53 @@ const App: React.FC = () => {
       };
       saveData();
     }
-  }, [teams, players, settings, loading]);
+  }, [teams, players, settings, loading, isAuthenticated]);
 
-  const handleLogin = (email: string, password: string): boolean => {
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanPassword = password.trim();
-    if (cleanEmail === 'chetan2469@gmail.com' && cleanPassword === 'Ux9146CT') {
-      setIsAuthenticated(true);
-      localStorage.setItem('auction_auth_token', 'valid_session');
-      return true;
+  const handleLogin = async (email: string, password: string): Promise<boolean> => {
+    try {
+      const result = await login(email, password);
+      if (result.success) {
+        localStorage.setItem('auction_auth_token', 'valid_session');
+        localStorage.setItem('auction_user_email', result.email);
+        localStorage.setItem('auction_user_role', result.role);
+        setIsAuthenticated(true);
+        
+        // Reload data for the new user
+        setLoading(true);
+        const loadedTeams = await loadTeams();
+        const loadedPlayers = await loadPlayers();
+        const loadedSettings = await loadSettings();
+        setTeams(loadedTeams);
+        setPlayers(loadedPlayers);
+        setSettings(loadedSettings);
+        setLoading(false);
+        
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Login error:', error);
+      return false;
     }
-    return false;
+  };
+
+  const handleRegister = async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      const result = await register(email, password);
+      return { success: true, message: 'Registration successful! Please wait for admin approval.' };
+    } catch (error: any) {
+      return { success: false, message: error.message || 'Registration failed' };
+    }
   };
 
   const handleLogout = () => {
+    logout();
     setIsAuthenticated(false);
-    localStorage.removeItem('auction_auth_token');
+    // Clear user data
+    setTeams([]);
+    setPlayers([]);
+    setSettings(DEFAULT_SETTINGS);
+    setHistory([]);
   };
 
   const handleUpdateTeam = (updatedTeam: Team) => {
@@ -204,6 +240,32 @@ const App: React.FC = () => {
     setPlayers(newPlayers);
   };
 
+  const handleResetAuction = () => {
+    // Reset all players to unsold
+    const resetPlayers = players.map(p => ({
+      ...p,
+      isSold: false,
+      soldToTeamId: undefined,
+      soldPrice: undefined
+    }));
+    setPlayers(resetPlayers);
+
+    // Reset all teams purse and players bought
+    const resetTeams = teams.map(t => ({
+      ...t,
+      purseRemaining: settings.totalPurse,
+      playersBought: []
+    }));
+    setTeams(resetTeams);
+
+    // Clear history
+    setHistory([]);
+  };
+
+  const handleDeletePlayers = (playerIds: string[]) => {
+    setPlayers(players.filter(p => !playerIds.includes(p.id)));
+  };
+
   if (!authChecked || loading) return (
     <div className="flex h-screen items-center justify-center bg-slate-950 text-cyan-500">
       <div className="animate-pulse flex flex-col items-center">
@@ -214,7 +276,7 @@ const App: React.FC = () => {
   );
 
   if (!isAuthenticated) {
-    return <LoginPage onLogin={handleLogin} />;
+    return <LoginPage onLogin={handleLogin} onRegister={handleRegister} />;
   }
 
   return (
@@ -270,6 +332,7 @@ const App: React.FC = () => {
               onAddPlayer={handleAddPlayer}
               onUpdatePlayer={handleUpdatePlayer}
               onDeletePlayer={handleDeletePlayer}
+              onDeletePlayers={handleDeletePlayers}
               confirmAction={confirmAction}
             />
           )}
@@ -283,6 +346,7 @@ const App: React.FC = () => {
               onUndoLastSold={handleUndoLastSold}
               canUndo={history.length > 0}
               onSkipPlayer={handleSkipPlayer}
+              onResetAuction={handleResetAuction}
               confirmAction={confirmAction}
             />
           )}
@@ -294,6 +358,10 @@ const App: React.FC = () => {
               onLoadDemoData={handleLoadDemo}
               confirmAction={confirmAction}
             />
+          )}
+
+          {currentView === 'ADMIN' && getCurrentUserRole() === 'admin' && (
+            <AdminPage />
           )}
         </div>
       </main>

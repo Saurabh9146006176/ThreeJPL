@@ -150,7 +150,20 @@ export const TeamsPage: React.FC<TeamsPageProps> = ({ teams, players, setPlayers
       p.name !== data.viceCaptainName // Remove original if exists
     );
     
-    setPlayers([...otherPlayers, captainPlayer, viceCaptainPlayer]);
+    // Mark all players in playersBought as sold to this team
+    const updatedPlayers = otherPlayers.map(p => {
+      if (data.playersBought.includes(p.id)) {
+        return {
+          ...p,
+          isSold: true,
+          soldToTeamId: teamId,
+          soldPrice: p.soldPrice || 0
+        };
+      }
+      return p;
+    });
+    
+    setPlayers([...updatedPlayers, captainPlayer, viceCaptainPlayer]);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -259,7 +272,23 @@ export const TeamsPage: React.FC<TeamsPageProps> = ({ teams, players, setPlayers
             'Import Teams?',
             `Found ${importedTeams.length} teams in the file.\n\nThis will APPEND them to your existing teams.`,
             () => {
-              importedTeams.forEach(team => onAddTeam(team));
+              importedTeams.forEach(team => {
+                onAddTeam(team);
+                // Sync players for each imported team
+                syncFixedPlayers(team.id, {
+                  id: team.id,
+                  name: team.name,
+                  logoUrl: team.logoUrl || '',
+                  captainName: team.captainName,
+                  captainMobile: team.captainMobile || '',
+                  captainPhotoUrl: team.captainPhotoUrl || '',
+                  viceCaptainName: team.viceCaptainName || '',
+                  viceCaptainMobile: team.viceCaptainMobile || '',
+                  viceCaptainPhotoUrl: team.viceCaptainPhotoUrl || '',
+                  playersBought: team.playersBought,
+                  purseRemaining: team.purseRemaining
+                });
+              });
               alert(`${importedTeams.length} teams imported successfully!`);
             }
           );

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Player, Team, AuctionSettings, ConfirmAction } from '../types';
 import { canTeamBid, getNextBidAmount, calculateMaxBid } from '../utils/auctionLogic';
-import { Gavel, CheckCircle, User, Shield, Edit3, X, RotateCcw, TrendingUp, SkipForward, AlertTriangle, ChevronRight } from 'lucide-react';
+import { Gavel, CheckCircle, User, Shield, Edit3, X, RotateCcw, TrendingUp, SkipForward, AlertTriangle, ChevronRight, RefreshCcw } from 'lucide-react';
 
 interface AuctionPageProps {
   teams: Team[];
@@ -11,10 +11,11 @@ interface AuctionPageProps {
   onUndoLastSold: () => void;
   canUndo: boolean;
   onSkipPlayer: (playerId: string) => void;
+  onResetAuction: () => void;
   confirmAction: ConfirmAction;
 }
 
-export const AuctionPage: React.FC<AuctionPageProps> = ({ teams, players, settings, onPlayerSold, onUndoLastSold, canUndo, onSkipPlayer, confirmAction }) => {
+export const AuctionPage: React.FC<AuctionPageProps> = ({ teams, players, settings, onPlayerSold, onUndoLastSold, canUndo, onSkipPlayer, onResetAuction, confirmAction }) => {
   const [currentBid, setCurrentBid] = useState<number>(0);
   const [leadingTeamId, setLeadingTeamId] = useState<string | null>(null);
   const [customBidTeamId, setCustomBidTeamId] = useState<string | null>(null);
@@ -73,14 +74,22 @@ export const AuctionPage: React.FC<AuctionPageProps> = ({ teams, players, settin
         </div>
         <h2 className="text-3xl font-bold text-white mb-2 tracking-tight">Auction Complete</h2>
         <p className="text-slate-400 mt-1 mb-6 text-sm">All players processed.</p>
-        {canUndo && (
+        <div className="flex gap-3">
+          {canUndo && (
+            <button 
+              onClick={() => confirmAction('Undo Last Sale?', "Undo the last sale?", () => onUndoLastSold())}
+              className="flex items-center px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-slate-300 text-sm"
+            >
+              <RotateCcw size={16} className="mr-2" /> Rewind Last
+            </button>
+          )}
           <button 
-            onClick={() => confirmAction('Undo Last Sale?', "Undo the last sale?", () => onUndoLastSold())}
-            className="flex items-center px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-slate-300 text-sm"
+            onClick={() => confirmAction('Reset Auction?', "This will unsold all players and reset all teams. Are you sure?", onResetAuction)}
+            className="flex items-center px-4 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/50 rounded-lg text-red-400 text-sm"
           >
-            <RotateCcw size={16} className="mr-2" /> Rewind Last
+            <RefreshCcw size={16} className="mr-2" /> Reset Auction
           </button>
-        )}
+        </div>
       </div>
     );
   }
@@ -164,7 +173,7 @@ export const AuctionPage: React.FC<AuctionPageProps> = ({ teams, players, settin
                <Gavel size={18} className="mr-2" /> SOLD PLAYER
              </button>
              
-             <div className="grid grid-cols-2 gap-3">
+             <div className="grid grid-cols-3 gap-2">
                 <button onClick={handleSkip} className="bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-[10px] font-bold py-2.5 rounded-lg flex items-center justify-center border border-slate-700 transition-colors">
                     <SkipForward size={12} className="mr-1.5" /> SKIP
                 </button>

@@ -1,30 +1,45 @@
 import React, { useState } from 'react';
-import { Gavel, Lock, Mail, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Gavel, Lock, Mail, ArrowRight, ShieldCheck, UserPlus, LogIn, Clock } from 'lucide-react';
 
 interface LoginPageProps {
-  onLogin: (email: string, password: string) => boolean;
+  onLogin: (email: string, password: string) => Promise<boolean>;
+  onRegister: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
 }
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
+export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, onRegister }) => {
+  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
+    setSuccess('');
 
-    // Simulate network delay for effect
-    setTimeout(() => {
-      const success = onLogin(email, password);
-      if (!success) {
-        setError('Invalid credentials. Access denied.');
-        setIsLoading(false);
+    try {
+      if (activeTab === 'login') {
+        const success = await onLogin(email, password);
+        if (!success) {
+          setError('Invalid credentials or access not approved.');
+        }
+      } else {
+        const result = await onRegister(email, password);
+        if (result.success) {
+          setSuccess(result.message);
+          setActiveTab('login'); // Switch to login after successful registration
+        } else {
+          setError(result.message);
+        }
       }
-      // If success, parent component unmounts this, so no need to set loading false
-    }, 800);
+    } catch (err) {
+      setError('An error occurred. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -46,6 +61,32 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
             <p className="text-slate-400 mt-2 text-sm">Secure Access Gateway</p>
           </div>
 
+          {/* Tab Navigation */}
+          <div className="flex mb-6 bg-slate-800/50 rounded-xl p-1">
+            <button
+              onClick={() => setActiveTab('login')}
+              className={`flex-1 flex items-center justify-center py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                activeTab === 'login'
+                  ? 'bg-cyan-600 text-white shadow-lg'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <LogIn size={16} className="mr-2" />
+              Login
+            </button>
+            <button
+              onClick={() => setActiveTab('register')}
+              className={`flex-1 flex items-center justify-center py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                activeTab === 'register'
+                  ? 'bg-cyan-600 text-white shadow-lg'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <UserPlus size={16} className="mr-2" />
+              Register
+            </button>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-4">
               <div className="relative group">
@@ -58,7 +99,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full bg-slate-900/50 border border-slate-700 text-slate-200 text-sm rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent block w-full pl-11 p-3.5 transition-all outline-none placeholder-slate-600"
-                  placeholder="admin@auctioneer.com"
+                  placeholder="your.email@example.com"
                 />
               </div>
 
@@ -84,6 +125,20 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
               </div>
             )}
 
+            {success && (
+              <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 text-xs flex items-center animate-in slide-in-from-top-2">
+                <ShieldCheck size={14} className="mr-2 flex-shrink-0" />
+                {success}
+              </div>
+            )}
+
+            {activeTab === 'register' && (
+              <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs flex items-center">
+                <Clock size={14} className="mr-2 flex-shrink-0" />
+                Registration requires admin approval. You'll be notified once approved.
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={isLoading}
@@ -93,7 +148,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
               ) : (
                 <>
-                  Enter System <ArrowRight size={18} className="ml-2" />
+                  {activeTab === 'login' ? 'Enter System' : 'Request Access'} <ArrowRight size={18} className="ml-2" />
                 </>
               )}
             </button>

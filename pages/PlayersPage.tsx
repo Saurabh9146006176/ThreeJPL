@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Player, PlayerRole, ExperienceLevel, AuctionSettings, ConfirmAction } from '../types';
-import { Plus, Search, Trash2, Upload, User, UserPlus, Edit3, X, Save, CopyX } from 'lucide-react';
+import { Plus, Search, Trash2, Upload, User, UserPlus, Edit3, X, Save, CopyX, CheckSquare, Square } from 'lucide-react';
 
 interface PlayersPageProps {
   players: Player[];
@@ -9,6 +9,7 @@ interface PlayersPageProps {
   onAddPlayer: (player: Player) => void;
   onUpdatePlayer: (player: Player) => void;
   onDeletePlayer: (id: string) => void;
+  onDeletePlayers: (ids: string[]) => void;
   confirmAction: ConfirmAction;
 }
 
@@ -25,10 +26,11 @@ const INITIAL_PLAYER_FORM = {
   soldPrice: undefined as number | undefined
 };
 
-export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers, settings, onAddPlayer, onUpdatePlayer, onDeletePlayer, confirmAction }) => {
+export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers, settings, onAddPlayer, onUpdatePlayer, onDeletePlayer, onDeletePlayers, confirmAction }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [selectedPlayers, setSelectedPlayers] = useState<Set<string>>(new Set());
   
   const [formData, setFormData] = useState(INITIAL_PLAYER_FORM);
 
@@ -82,6 +84,39 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers, s
     } else {
         alert("No duplicates found.");
     }
+  };
+
+  const handleToggleSelect = (playerId: string) => {
+    const newSelected = new Set(selectedPlayers);
+    if (newSelected.has(playerId)) {
+      newSelected.delete(playerId);
+    } else {
+      newSelected.add(playerId);
+    }
+    setSelectedPlayers(newSelected);
+  };
+
+  const handleSelectAll = () => {
+    setSelectedPlayers(new Set(filteredPlayers.map(p => p.id)));
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedPlayers(new Set());
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedPlayers.size === 0) {
+      alert('No players selected');
+      return;
+    }
+    confirmAction(
+      'Delete Selected Players?',
+      `Delete ${selectedPlayers.size} selected player(s)?`,
+      () => {
+        onDeletePlayers(Array.from(selectedPlayers));
+        setSelectedPlayers(new Set());
+      }
+    );
   };
 
   const handleEdit = (player: Player) => {
@@ -170,6 +205,39 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers, s
             {showForm ? <X size={18} className="mr-2" /> : <Plus size={18} className="mr-2" />} 
             {showForm ? 'Cancel' : 'Add Player'}
           </button>
+        </div>
+      </div>
+
+      {/* Bulk Actions Bar */}
+      <div className="glass-panel p-4 rounded-xl border border-white/10 flex justify-between items-center">
+        <div className="text-slate-300 text-sm">
+          {selectedPlayers.size > 0 ? (
+            <span className="font-medium">{selectedPlayers.size} player(s) selected</span>
+          ) : (
+            <span className="text-slate-500">No players selected</span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={handleSelectAll}
+            className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 border border-slate-700 transition-all"
+          >
+            <CheckSquare size={14} /> Select All
+          </button>
+          <button
+            onClick={handleDeselectAll}
+            className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 border border-slate-700 transition-all"
+          >
+            <Square size={14} /> Deselect All
+          </button>
+          {selectedPlayers.size > 0 && (
+            <button
+              onClick={handleDeleteSelected}
+              className="bg-red-600/20 hover:bg-red-600/30 text-red-400 hover:text-red-300 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 border border-red-500/50 transition-all"
+            >
+              <Trash2 size={14} /> Delete Selected
+            </button>
+          )}
         </div>
       </div>
 
@@ -305,6 +373,7 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers, s
           <table className="min-w-full divide-y divide-slate-800">
             <thead className="bg-slate-900/50">
               <tr>
+                <th className="px-4 py-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest w-12">Select</th>
                 <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Player</th>
                 <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Role</th>
                 <th className="px-6 py-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Rank</th>
@@ -316,6 +385,18 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers, s
             <tbody className="divide-y divide-slate-800 bg-transparent">
               {filteredPlayers.map(player => (
                 <tr key={player.id} className="hover:bg-white/5 transition-colors group">
+                  <td className="px-4 py-4 text-center">
+                    <button
+                      onClick={() => handleToggleSelect(player.id)}
+                      className="text-slate-400 hover:text-cyan-400 transition-colors"
+                    >
+                      {selectedPlayers.has(player.id) ? (
+                        <CheckSquare size={18} className="text-cyan-400" />
+                      ) : (
+                        <Square size={18} />
+                      )}
+                    </button>
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <div className="h-10 w-10 flex-shrink-0">
