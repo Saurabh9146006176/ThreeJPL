@@ -3,6 +3,38 @@ import { INITIAL_TEAMS, INITIAL_PLAYERS, DEFAULT_SETTINGS } from '../constants';
 
 const API_BASE_URL = 'https://us-central1-axilam.cloudfunctions.net/api';
 
+// When documents approach Firestore 1MB limit, embedded base64 images cause failures.
+// To avoid that, strip very large embedded image strings before sending to the API.
+const STRIP_IMAGE_SIZE_THRESHOLD = 120000; // chars (~120KB) - conservative
+
+const stripLargeImagesFromPlayers = (players: Player[]) => {
+  let removed = 0;
+  const out = players.map(p => {
+    if (p.photoUrl && p.photoUrl.length > STRIP_IMAGE_SIZE_THRESHOLD) {
+      removed++;
+      const { photoUrl, ...rest } = p as any;
+      return rest as Player;
+    }
+    return p;
+  });
+  if (removed > 0) console.warn(`storageService: stripped ${removed} large player images before save`);
+  return out;
+};
+
+const stripLargeImagesFromTeams = (teams: Team[]) => {
+  let removed = 0;
+  const out = teams.map(t => {
+    if (t.logoUrl && t.logoUrl.length > STRIP_IMAGE_SIZE_THRESHOLD) {
+      removed++;
+      const { logoUrl, ...rest } = t as any;
+      return rest as Team;
+    }
+    return t;
+  });
+  if (removed > 0) console.warn(`storageService: stripped ${removed} large team logos before save`);
+  return out;
+};
+
 // Helper to download data as JSON file
 export const exportDataToJSON = async (teams: Team[], players: Player[], settings: AuctionSettings) => {
   const data = {
@@ -69,13 +101,16 @@ export const saveTeams = async (teams: Team[]) => {
   try {
     const email = getCurrentUserEmail();
     if (!email) throw new Error('User not authenticated');
-    
+    const safeTeams = stripLargeImagesFromTeams(teams);
     const response = await fetch(`${API_BASE_URL}/teams`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, data: teams })
+      body: JSON.stringify({ email, data: safeTeams })
     });
-    if (!response.ok) throw new Error('Failed to save teams');
+    if (!response.ok) {
+      const body = await response.text().catch(() => 'Unable to read response body');
+      throw new Error(`Failed to save teams: ${response.status} ${body}`);
+    }
   } catch (e) {
     console.error("Error saving teams", e);
   }
@@ -100,13 +135,16 @@ export const savePlayers = async (players: Player[]) => {
   try {
     const email = getCurrentUserEmail();
     if (!email) throw new Error('User not authenticated');
-    
+    const safePlayers = stripLargeImagesFromPlayers(players);
     const response = await fetch(`${API_BASE_URL}/players`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, data: players })
+      body: JSON.stringify({ email, data: safePlayers })
     });
-    if (!response.ok) throw new Error('Failed to save players');
+    if (!response.ok) {
+      const body = await response.text().catch(() => 'Unable to read response body');
+      throw new Error(`Failed to save players: ${response.status} ${body}`);
+    }
   } catch (e) {
     console.error("Error saving players", e);
   }
@@ -137,7 +175,10 @@ export const saveSettings = async (settings: AuctionSettings) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, data: settings })
     });
-    if (!response.ok) throw new Error('Failed to save settings');
+    if (!response.ok) {
+      const body = await response.text().catch(() => 'Unable to read response body');
+      throw new Error(`Failed to save settings: ${response.status} ${body}`);
+    }
   } catch (e) {
     console.error("Error saving settings", e);
   }

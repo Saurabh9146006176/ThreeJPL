@@ -244,7 +244,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <div 
-      className={`${isCollapsed ? 'w-20' : 'w-64'} glass-panel border-r border-white/5 min-h-screen flex flex-col transition-all duration-300 fixed left-0 top-0 z-50`}
+      className={`${isCollapsed ? 'w-20 -translate-x-full lg:translate-x-0' : 'w-64 translate-x-0'} glass-panel border-r border-white/5 min-h-screen flex flex-col transition-all duration-300 fixed left-0 top-0 z-50`}
     >
       {/* Hidden Input outside conditional rendering */}
       <input 

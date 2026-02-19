@@ -18,7 +18,10 @@ const App: React.FC = () => {
   const [authChecked, setAuthChecked] = useState(false);
 
   // Layout State
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    // On mobile, start collapsed. On desktop, start expanded.
+    return window.innerWidth < 1024;
+  });
 
   // App Data State
   const [currentView, setCurrentView] = useState<ViewState>('DASHBOARD');
@@ -70,7 +73,11 @@ const App: React.FC = () => {
     const loadData = async () => {
       if (isAuthenticated) {
         const loadedTeams = await loadTeams();
-        const loadedPlayers = await loadPlayers();
+        const loadedPlayers = (await loadPlayers()).slice().sort((a, b) => {
+          const numA = parseInt(a.id.replace(/\D/g, '')) || 0;
+          const numB = parseInt(b.id.replace(/\D/g, '')) || 0;
+          return numA - numB;
+        });
         const loadedSettings = await loadSettings();
         
         setTeams(loadedTeams);
@@ -169,6 +176,13 @@ const App: React.FC = () => {
   };
 
   const handleUpdateSettings = (newSettings: AuctionSettings) => {
+    // If defaultBasePrice has changed, update all unsold players
+    if (newSettings.defaultBasePrice !== settings.defaultBasePrice) {
+      const updatedPlayers = players.map(p => 
+        !p.isSold ? { ...p, basePrice: newSettings.defaultBasePrice } : p
+      );
+      setPlayers(updatedPlayers);
+    }
     setSettings(newSettings);
   };
 
@@ -182,10 +196,40 @@ const App: React.FC = () => {
 
   const handleLoadDemo = () => {
     setTeams(DEMO_TEAMS);
-    setPlayers(DEMO_PLAYERS);
+    setPlayers(DEMO_PLAYERS.slice().sort((a, b) => {
+      const numA = parseInt(a.id.replace(/\D/g, '')) || 0;
+      const numB = parseInt(b.id.replace(/\D/g, '')) || 0;
+      return numA - numB;
+    }));
     setSettings(DEFAULT_SETTINGS);
     setHistory([]);
     alert('Demo data loaded!');
+  };
+
+  const handleReloadData = async () => {
+    try {
+      setLoading(true);
+      const [loadedTeams, loadedPlayersRaw, loadedSettings] = await Promise.all([
+        loadTeams(),
+        loadPlayers(),
+        loadSettings()
+      ]);
+
+      const loadedPlayers = loadedPlayersRaw.slice().sort((a, b) => {
+        const numA = parseInt(a.id.replace(/\D/g, '')) || 0;
+        const numB = parseInt(b.id.replace(/\D/g, '')) || 0;
+        return numA - numB;
+      });
+      
+      setTeams(loadedTeams);
+      setPlayers(loadedPlayers);
+      setSettings(loadedSettings);
+    } catch (error) {
+      console.error('Error reloading data:', error);
+      alert('Failed to reload data. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handlePlayerSold = (playerId: string, teamId: string, price: number) => {
@@ -289,6 +333,14 @@ const App: React.FC = () => {
         onCancel={closeConfirmModal}
       />
 
+      {/* Mobile Overlay */}
+      {!isSidebarCollapsed && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+          onClick={() => setIsSidebarCollapsed(true)}
+        />
+      )}
+
       <Sidebar 
         currentView={currentView} 
         setView={setCurrentView} 
@@ -302,13 +354,23 @@ const App: React.FC = () => {
         toggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
       />
       
-      <main className={`flex-1 p-4 transition-all duration-300 relative overflow-hidden ${isSidebarCollapsed ? 'ml-20' : 'ml-64'}`}>
+      <main className={`flex-1 p-2 md:p-4 transition-all duration-300 relative overflow-hidden ${isSidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
+        {/* Mobile Menu Toggle Button */}
+        <button
+          onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+          className="lg:hidden fixed top-4 left-4 z-30 bg-slate-800 text-white p-3 rounded-xl border border-slate-700 shadow-lg hover:bg-slate-700 transition-colors"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+
         <div className="absolute top-0 left-0 w-full h-96 bg-cyan-500/5 blur-[100px] pointer-events-none rounded-full transform -translate-y-1/2"></div>
         <div className="absolute bottom-0 right-0 w-full h-96 bg-purple-500/5 blur-[100px] pointer-events-none rounded-full transform translate-y-1/2"></div>
 
-        <div className="max-w-[1920px] mx-auto relative z-10 h-full">
+        <div className="max-w-[1920px] mx-auto relative z-10 h-full pt-16 lg:pt-0">
           {currentView === 'DASHBOARD' && (
-            <Dashboard teams={teams} players={players} settings={settings} />
+            <Dashboard teams={teams} players={players} settings={settings} onReload={handleReloadData} />
           )}
           
           {currentView === 'TEAMS' && (
@@ -321,6 +383,7 @@ const App: React.FC = () => {
               onAddTeam={handleAddTeam}
               onDeleteTeam={handleDeleteTeam}
               confirmAction={confirmAction}
+              onReload={handleReloadData}
             />
           )}
           
@@ -334,6 +397,7 @@ const App: React.FC = () => {
               onDeletePlayer={handleDeletePlayer}
               onDeletePlayers={handleDeletePlayers}
               confirmAction={confirmAction}
+              onReload={handleReloadData}
             />
           )}
           

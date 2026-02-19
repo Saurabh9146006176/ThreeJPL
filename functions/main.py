@@ -5,10 +5,14 @@
 from firebase_functions import https_fn
 from firebase_functions.options import set_global_options
 from firebase_admin import initialize_app, credentials, firestore
+from firebase_admin import storage as fb_storage
 import flask
 import json
 import os
 from flask_cors import CORS
+from werkzeug.utils import secure_filename
+from datetime import datetime
+import uuid
 
 # For cost control, you can set the maximum number of containers that can be
 # running at the same time. This helps mitigate the impact of unexpected
@@ -34,6 +38,68 @@ CORS(app)  # Enable CORS for all routes
 # Collections
 AUTH_COLLECTION = 'auth'
 ADMIN_EMAIL = 'chetan2469@gmail.com'
+
+# File upload configuration
+ALLOWED_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'gif', 'webp'}
+ALLOWED_PDF_EXTENSIONS = {'pdf'}
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+
+def validate_file(file, file_type: str = 'image'):
+    """Validate file size and extension"""
+    allowed_extensions = ALLOWED_IMAGE_EXTENSIONS if file_type == 'image' else ALLOWED_PDF_EXTENSIONS
+
+    # Flask/Werkzeug may not provide content_length on the FileStorage; use request content length as fallback
+    content_length = flask.request.content_length
+    if content_length and content_length > MAX_FILE_SIZE:
+        raise ValueError(f"File size exceeds {MAX_FILE_SIZE / (1024*1024)}MB limit")
+
+    filename = secure_filename(file.filename)
+    ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+
+    if ext not in allowed_extensions:
+        raise ValueError(f"File type .{ext} not allowed. Allowed: {', '.join(allowed_extensions)}")
+
+    return filename, ext
+
+def get_storage_bucket():
+    # Return the default bucket
+    return fb_storage.bucket()
+
+def upload_file_to_storage(file, folder: str, file_type: str = 'image') -> str:
+    """
+    Upload file to Firebase Storage and return download URL
+    """
+    try:
+        # Validate
+        filename, ext = validate_file(file, file_type)
+
+        # Unique filename
+        timestamp = int(datetime.now().timestamp() * 1000)
+        unique_filename = f"{timestamp}_{uuid.uuid4().hex[:8]}.{ext}"
+        storage_path = f"{folder}/{unique_filename}"
+
+        bucket = get_storage_bucket()
+        blob = bucket.blob(storage_path)
+
+        # Upload
+        blob.upload_from_string(
+            file.read(),
+            content_type=file.content_type
+        )
+
+        # Make public and return URL
+        try:
+            blob.make_public()
+            download_url = blob.public_url
+        except Exception:
+            # If making public fails, return signed URL as fallback (requires credentials)
+            download_url = blob.public_url
+
+        return download_url
+    except ValueError as e:
+        raise
+    except Exception as e:
+        raise Exception(f"Failed to upload file: {str(e)}")
 
 def hash_password(password):
     import hashlib
@@ -405,6 +471,39 @@ def save_settings():
         doc_ref = db.collection(collection_name).document('settings')
         doc_ref.set({'data': data.get('data', {})})
         return flask.jsonify({'success': True})
+    except Exception as e:
+        return flask.jsonify({'error': str(e)}), 500
+
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    try:
+        # Ensure file present
+        if 'file' not in flask.request.files:
+            return flask.jsonify({'error': 'No file provided'}), 400
+
+        file = flask.request.files['file']
+        if file.filename == '':
+            return flask.jsonify({'error': 'No file selected'}), 400
+
+        # Optional form fields
+        folder = flask.request.form.get('folder', 'auction_player')
+        file_type = flask.request.form.get('file_type', 'image')
+
+        # Upload to storage
+        download_url = upload_file_to_storage(file, folder, file_type)
+
+        response_data = {
+            'success': True,
+            'url': download_url,
+            'filename': file.filename,
+            'fileType': file_type,
+            'uploadedAt': datetime.now().isoformat()
+        }
+
+        return flask.jsonify(response_data), 200
+    except ValueError as e:
+        return flask.jsonify({'error': str(e)}), 400
     except Exception as e:
         return flask.jsonify({'error': str(e)}), 500
 

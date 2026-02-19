@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Player, PlayerRole, ExperienceLevel, AuctionSettings, ConfirmAction } from '../types';
-import { Plus, Search, Trash2, Upload, User, UserPlus, Edit3, X, Save, CopyX, CheckSquare, Square } from 'lucide-react';
+import { Plus, Search, Trash2, Upload, User, UserPlus, Edit3, X, Save, CopyX, CheckSquare, Square, RefreshCw } from 'lucide-react';
 
 interface PlayersPageProps {
   players: Player[];
@@ -11,6 +11,7 @@ interface PlayersPageProps {
   onDeletePlayer: (id: string) => void;
   onDeletePlayers: (ids: string[]) => void;
   confirmAction: ConfirmAction;
+  onReload: () => Promise<void>;
 }
 
 const INITIAL_PLAYER_FORM = {
@@ -26,11 +27,12 @@ const INITIAL_PLAYER_FORM = {
   soldPrice: undefined as number | undefined
 };
 
-export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers, settings, onAddPlayer, onUpdatePlayer, onDeletePlayer, onDeletePlayers, confirmAction }) => {
+export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers, settings, onAddPlayer, onUpdatePlayer, onDeletePlayer, onDeletePlayers, confirmAction, onReload }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [selectedPlayers, setSelectedPlayers] = useState<Set<string>>(new Set());
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   const [formData, setFormData] = useState(INITIAL_PLAYER_FORM);
 
@@ -40,23 +42,61 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers, s
     setShowForm(true);
   };
 
-  const filteredPlayers = players.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    p.mobileNumber.includes(searchTerm)
-  );
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await onReload();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const filteredPlayers = players
+    .filter(p => 
+      p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      p.mobileNumber.includes(searchTerm)
+    )
+    .sort((a, b) => {
+      const numA = parseInt(a.id.replace(/\D/g, '')) || 0;
+      const numB = parseInt(b.id.replace(/\D/g, '')) || 0;
+      return numA - numB;
+    });
+  const API_BASE = 'https://us-central1-axilam.cloudfunctions.net/api';
+
+  async function uploadImageFile(file: File): Promise<string> {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('folder', 'auction_player');
+
+    const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: fd });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Upload failed ${res.status}: ${body}`);
+    }
+    const json = await res.json();
+    return json.url;
+  }
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 10 * 1024 * 1024) { 
-        alert("File too large. Max 10MB.");
-        return;
-      }
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) { 
+      alert('File too large. Max 10MB.');
+      return;
+    }
+
+    try {
+      const url = await uploadImageFile(file);
+      setFormData(prev => ({ ...prev, photoUrl: url }));
+    } catch (err) {
+      // Fallback to local preview if upload fails
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => ({ ...prev, photoUrl: reader.result as string }));
-      };
+      reader.onloadend = () => setFormData(prev => ({ ...prev, photoUrl: reader.result as string }));
       reader.readAsDataURL(file);
+      console.error('Upload failed, using local preview:', err);
+      alert('Image upload failed — using local preview. Check function deployment.');
     }
   };
 
@@ -184,6 +224,14 @@ export const PlayersPage: React.FC<PlayersPageProps> = ({ players, setPlayers, s
             />
             <Search className="absolute left-3 top-3 text-slate-500 group-focus-within:text-cyan-400 transition-colors" size={18} />
           </div>
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="bg-slate-700 text-slate-300 px-3 py-2 rounded-xl hover:bg-slate-600 hover:text-white border border-slate-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Refresh Data"
+          >
+            <RefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
+          </button>
           <button 
              onClick={handleRemoveDuplicates}
              className="bg-slate-800 text-slate-300 px-3 py-2 rounded-xl hover:bg-slate-700 hover:text-white border border-slate-700 transition-all"

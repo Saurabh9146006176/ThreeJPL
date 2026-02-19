@@ -4,7 +4,7 @@
     "runtime": "python312"
   },
   "hosting": {
-    "site": "tjplcricket",
+    "site": "tjplcricket1",
     "public": "dist",
     "ignore": [
       "firebase.json",

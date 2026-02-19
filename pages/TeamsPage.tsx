@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Team, Player, AuctionSettings, ConfirmAction } from '../types';
-import { Plus, Trash2, X, Upload, User, Shield, Edit3, Star, Search, Printer, FileText } from 'lucide-react';
+import { Plus, Trash2, X, Upload, User, Shield, Edit3, Star, Search, Printer, FileText, Info, Download, RefreshCw } from 'lucide-react';
+import html2pdf from 'html2pdf.js';
 
 interface TeamsPageProps {
   teams: Team[];
@@ -11,6 +12,7 @@ interface TeamsPageProps {
   onAddTeam: (team: Team) => void;
   onDeleteTeam: (id: string) => void;
   confirmAction: ConfirmAction;
+  onReload: () => Promise<void>;
 }
 
 const INITIAL_TEAM_FORM = {
@@ -30,10 +32,15 @@ const INITIAL_TEAM_FORM = {
   purseRemaining: 0
 };
 
-export const TeamsPage: React.FC<TeamsPageProps> = ({ teams, players, setPlayers, settings, onUpdateTeam, onAddTeam, onDeleteTeam, confirmAction }) => {
+export const TeamsPage: React.FC<TeamsPageProps> = ({ teams, players, setPlayers, settings, onUpdateTeam, onAddTeam, onDeleteTeam, confirmAction, onReload }) => {
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState(INITIAL_TEAM_FORM);
   const [isEditing, setIsEditing] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // Team Info Modal State
+  const [showTeamInfo, setShowTeamInfo] = useState(false);
+  const [selectedTeamForInfo, setSelectedTeamForInfo] = useState<Team | null>(null);
 
   // Search States
   const [capSearchTerm, setCapSearchTerm] = useState('');
@@ -43,18 +50,51 @@ export const TeamsPage: React.FC<TeamsPageProps> = ({ teams, players, setPlayers
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, field: 'logoUrl' | 'captainPhotoUrl' | 'viceCaptainPhotoUrl') => {
+  const API_BASE = 'https://us-central1-axilam.cloudfunctions.net/api';
+
+  async function uploadImageFile(file: File, folder = 'team_assets'): Promise<string> {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('folder', folder);
+
+    const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: fd });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Upload failed ${res.status}: ${body}`);
+    }
+    const json = await res.json();
+    return json.url;
+  }
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: 'logoUrl' | 'captainPhotoUrl' | 'viceCaptainPhotoUrl') => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) { 
-        alert("File too large. Max 5MB.");
-        return;
-      }
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) { 
+      alert("File too large. Max 5MB.");
+      return;
+    }
+
+    try {
+      const url = await uploadImageFile(file, field === 'logoUrl' ? 'team_logo' : 'team_assets');
+      setFormData(prev => ({ ...prev, [field]: url }));
+    } catch (err) {
+      // fallback to local preview
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => ({ ...prev, [field]: reader.result as string }));
-      };
+      reader.onloadend = () => setFormData(prev => ({ ...prev, [field]: reader.result as string }));
       reader.readAsDataURL(file);
+      console.error('Upload failed, using local preview:', err);
+      alert('Logo upload failed — using local preview. Check function deployment.');
+    }
+  };
+
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await onReload();
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -324,6 +364,7 @@ export const TeamsPage: React.FC<TeamsPageProps> = ({ teams, players, setPlayers
         <style>
           body { font-family: sans-serif; padding: 20px; color: #333; }
           .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 20px; }
+          .team-logo { width: 80px; height: 80px; margin: 0 auto 15px; object-fit: contain; }
           .team-name { font-size: 28px; font-weight: bold; text-transform: uppercase; }
           .meta { font-size: 14px; margin-top: 5px; color: #666; }
           .stats-box { display: flex; justify-content: space-between; margin-bottom: 20px; background: #f4f4f4; padding: 15px; border-radius: 8px; }
@@ -341,6 +382,7 @@ export const TeamsPage: React.FC<TeamsPageProps> = ({ teams, players, setPlayers
       </head>
       <body>
         <div class="header">
+          ${team.logoUrl ? `<img src="${team.logoUrl}" alt="${team.name}" class="team-logo" />` : ''}
           <div class="team-name">${team.name}</div>
           <div class="meta">Auction Report • ${date}</div>
         </div>
@@ -423,6 +465,140 @@ export const TeamsPage: React.FC<TeamsPageProps> = ({ teams, players, setPlayers
     printWindow.document.close();
   };
 
+  // --- DOWNLOAD PDF FUNCTION ---
+  const downloadTeamPDF = async (team: Team) => {
+    const teamPlayers = getTeamPlayers(team);
+    const date = new Date().toLocaleDateString();
+
+    // Center content and fix width for PDF
+    const htmlContent = `
+      <div id="pdf-content" style="font-family: Arial, sans-serif; padding: 20px; color: #333; width: 700px; margin: 0 auto; background: #fff;">
+        <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 20px;">
+          ${team.logoUrl ? `<img src="${team.logoUrl}" alt="${team.name}" style="width: 80px; height: 80px; margin: 0 auto 15px; object-fit: contain; display: block;" crossorigin="anonymous" />` : ''}
+          <div style="font-size: 28px; font-weight: bold; text-transform: uppercase;">${team.name}</div>
+          <div style="font-size: 14px; margin-top: 5px; color: #666;">Auction Report • ${date}</div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; margin-bottom: 20px; background: #f4f4f4; padding: 15px; border-radius: 8px;">
+          <div style="text-align: center;">
+            <div style="font-size: 12px; text-transform: uppercase; font-weight: bold; color: #555;">Purse Remaining</div>
+            <div style="font-size: 18px; font-weight: bold;">₹${team.purseRemaining.toLocaleString()}</div>
+          </div>
+          <div style="text-align: center;">
+            <div style="font-size: 12px; text-transform: uppercase; font-weight: bold; color: #555;">Total Players</div>
+            <div style="font-size: 18px; font-weight: bold;">${teamPlayers.length + 2}</div>
+          </div>
+          <div style="text-align: center;">
+            <div style="font-size: 12px; text-transform: uppercase; font-weight: bold; color: #555;">Captain</div>
+            <div style="font-size: 18px; font-weight: bold;">${team.captainName}</div>
+          </div>
+        </div>
+
+        <h3>Leadership Core</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+          <thead>
+            <tr>
+              <th style="text-align: left; background: #333; color: #fff; padding: 10px; font-size: 12px; text-transform: uppercase;">Name</th>
+              <th style="text-align: left; background: #333; color: #fff; padding: 10px; font-size: 12px; text-transform: uppercase;">Role</th>
+              <th style="text-align: left; background: #333; color: #fff; padding: 10px; font-size: 12px; text-transform: uppercase;">Status</th>
+              <th style="text-align: left; background: #333; color: #fff; padding: 10px; font-size: 12px; text-transform: uppercase;">Mobile</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="background: #f9f9f9;">
+              <td style="border-bottom: 1px solid #ddd; padding: 10px; font-size: 14px;"><strong>${team.captainName}</strong></td>
+              <td style="border-bottom: 1px solid #ddd; padding: 10px; font-size: 14px;">Captain</td>
+              <td style="border-bottom: 1px solid #ddd; padding: 10px; font-size: 14px;">Fixed</td>
+              <td style="border-bottom: 1px solid #ddd; padding: 10px; font-size: 14px;">${team.captainMobile || 'N/A'}</td>
+            </tr>
+            ${team.viceCaptainName ? `
+            <tr>
+              <td style="border-bottom: 1px solid #ddd; padding: 10px; font-size: 14px;"><strong>${team.viceCaptainName}</strong></td>
+              <td style="border-bottom: 1px solid #ddd; padding: 10px; font-size: 14px;">Key Player</td>
+              <td style="border-bottom: 1px solid #ddd; padding: 10px; font-size: 14px;">Fixed</td>
+              <td style="border-bottom: 1px solid #ddd; padding: 10px; font-size: 14px;">${team.viceCaptainMobile || 'N/A'}</td>
+            </tr>` : ''}
+          </tbody>
+        </table>
+
+        <h3 style="margin-top: 30px;">Auction Acquisitions</h3>
+        ${teamPlayers.length === 0 ? '<p style="text-align:center; padding: 20px; color: #666;">No players bought yet.</p>' : `
+        <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+          <thead>
+            <tr>
+              <th style="text-align: left; background: #333; color: #fff; padding: 10px; font-size: 12px; text-transform: uppercase;">Player Name</th>
+              <th style="text-align: left; background: #333; color: #fff; padding: 10px; font-size: 12px; text-transform: uppercase;">Mobile</th>
+              <th style="text-align: left; background: #333; color: #fff; padding: 10px; font-size: 12px; text-transform: uppercase; min-width: 120px; max-width: 160px; vertical-align: middle; word-break: break-all;">Category</th>
+              <th style="text-align: right; background: #333; color: #fff; padding: 10px; font-size: 12px; text-transform: uppercase;">Sold Price</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${teamPlayers.map((p, idx) => `
+              <tr style="${idx % 2 === 1 ? 'background: #f9f9f9;' : ''}">
+                <td style="border-bottom: 1px solid #ddd; padding: 10px; font-size: 14px;">${p.name}</td>
+                <td style="border-bottom: 1px solid #ddd; padding: 10px; font-size: 14px;">${p.mobileNumber}</td>
+                <td style="border-bottom: 1px solid #ddd; padding: 10px; font-size: 14px; min-width: 120px; max-width: 160px; vertical-align: middle; word-break: break-all;">
+                  <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #eee; border: 1px solid #ccc; display: inline-block; margin-right: 4px; max-width: 140px; word-break: break-all; white-space: normal; vertical-align: middle;">${p.category}</span>
+                </td>
+                <td style="border-bottom: 1px solid #ddd; padding: 10px; font-size: 14px; text-align: right; font-family: monospace; font-weight: bold;">₹${p.soldPrice?.toLocaleString() || 0}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        `}
+
+        <div style="margin-top: 40px; text-align: center; font-size: 10px; color: #999; border-top: 1px solid #eee; padding-top: 10px;">
+          Generated by Premier League Auctioneer System
+        </div>
+      </div>
+    `;
+
+    const element = document.createElement('div');
+    element.innerHTML = htmlContent;
+    document.body.appendChild(element);
+
+    // Wait for images to load (logo especially)
+    const images = element.getElementsByTagName('img');
+    if (images.length > 0) {
+      const imagePromises = Array.from(images).map(img => {
+        return new Promise((resolve) => {
+          if (img.complete) {
+            resolve(true);
+          } else {
+            img.onload = () => resolve(true);
+            img.onerror = () => resolve(true);
+          }
+        });
+      });
+      await Promise.all(imagePromises);
+    }
+
+    // Small delay to ensure rendering
+    await new Promise(resolve => setTimeout(resolve, 150));
+
+    const opt = {
+      margin: [0.5, 0.5, 0.5, 0.5] as [number, number, number, number], // top, right, bottom, left
+      filename: `${team.name.replace(/[^a-z0-9]/gi, '_')}_Roster.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { 
+        scale: 2,
+        useCORS: true,
+        allowTaint: false,
+        logging: false,
+        backgroundColor: '#fff'
+      },
+      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+    };
+
+    html2pdf().set(opt).from(element).save().then(() => {
+      document.body.removeChild(element);
+    }).catch((err) => {
+      console.error('PDF generation error:', err);
+      document.body.removeChild(element);
+      alert('Error generating PDF. Please try again.');
+    });
+  };
+
 
   // Filter available players for selection (exclude already sold ones)
   const availablePlayers = players
@@ -445,16 +621,24 @@ export const TeamsPage: React.FC<TeamsPageProps> = ({ teams, players, setPlayers
     : [];
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex justify-between items-center">
+    <div className="space-y-6 animate-in fade-in duration-500 pb-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-3xl font-bold text-white tracking-tight">Team Management</h2>
-          <p className="text-slate-400 mt-1">Configure franchises and view squads</p>
+          <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight">Team Management</h2>
+          <p className="text-slate-400 mt-1 text-sm md:text-base">Configure franchises and view squads</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 w-full md:w-auto">
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="flex-none bg-slate-700 text-slate-300 px-3 md:px-4 py-2.5 rounded-xl hover:bg-slate-600 hover:text-white flex items-center justify-center border border-slate-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Refresh Data"
+          >
+            <RefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
+          </button>
           <button
             onClick={handleImportTeams}
-            className="bg-green-600 text-white px-5 py-2.5 rounded-xl hover:bg-green-500 flex items-center shadow-lg shadow-green-900/20 transition-all font-medium"
+            className="flex-1 md:flex-none bg-green-600 text-white px-4 md:px-5 py-2.5 rounded-xl hover:bg-green-500 flex items-center justify-center shadow-lg shadow-green-900/20 transition-all font-medium text-sm"
           >
             <Upload size={18} className="mr-2" /> 
             Import Teams
@@ -465,7 +649,7 @@ export const TeamsPage: React.FC<TeamsPageProps> = ({ teams, players, setPlayers
               setIsEditing(false);
               setShowForm(!showForm);
             }}
-            className="bg-cyan-600 text-white px-5 py-2.5 rounded-xl hover:bg-cyan-500 flex items-center shadow-lg shadow-cyan-900/20 transition-all font-medium"
+            className="flex-1 md:flex-none bg-cyan-600 text-white px-4 md:px-5 py-2.5 rounded-xl hover:bg-cyan-500 flex items-center justify-center shadow-lg shadow-cyan-900/20 transition-all font-medium text-sm"
           >
             {showForm ? <X size={18} className="mr-2" /> : <Plus size={18} className="mr-2" />} 
             {showForm ? 'Cancel' : 'Add Team'}
@@ -653,96 +837,169 @@ export const TeamsPage: React.FC<TeamsPageProps> = ({ teams, players, setPlayers
         </form>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* Teams Grid - 4 per row, non-scrollable for up to 10 teams */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
         {teams.map(team => {
           const teamPlayers = getTeamPlayers(team);
-          const rosterCount = teamPlayers.length + 2; // +2 for Fixed Players
+          const rosterCount = teamPlayers.length + 2;
 
           return (
-            <div key={team.id} className="glass-panel rounded-2xl overflow-hidden group hover:bg-slate-800/60 transition-all duration-300 border border-white/5 hover:border-cyan-500/30">
-              <div className="p-6">
-                <div className="flex justify-between items-start mb-6">
-                  <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-xl bg-slate-800 border border-white/5 flex items-center justify-center overflow-hidden">
-                       {team.logoUrl ? <img src={team.logoUrl} className="w-full h-full object-cover" /> : <Shield className="text-slate-600 w-8 h-8" />}
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-bold text-white group-hover:text-cyan-400 transition-colors">{team.name}</h3>
-                      <div className="flex flex-col gap-1 mt-1">
-                        <div className="flex items-center text-xs text-slate-400">
-                           <span className="w-4 flex justify-center mr-1 text-yellow-500"><User size={12} /></span>
-                           {team.captainName} <span className="text-slate-600 ml-1 text-[10px]">(C)</span>
-                        </div>
-                        {team.viceCaptainName && (
-                          <div className="flex items-center text-xs text-slate-400">
-                             <span className="w-4 flex justify-center mr-1 text-purple-500"><Star size={10} /></span>
-                             {team.viceCaptainName} <span className="text-slate-600 ml-1 text-[10px]">(VC)</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+            <div key={team.id} className="glass-panel rounded-2xl overflow-hidden group hover:bg-slate-800/60 transition-all duration-300 border border-white/5 hover:border-cyan-500/30 flex flex-col">
+              <div className="p-4 md:p-5 flex flex-col h-full">
+                {/* Team Logo and Name */}
+                <div className="flex flex-col items-center mb-4">
+                  <div className="w-16 h-16 md:w-20 md:h-20 rounded-xl bg-slate-800 border border-white/5 flex items-center justify-center overflow-hidden mb-3 shadow-lg">
+                     {team.logoUrl ? <img src={team.logoUrl} className="w-full h-full object-cover" /> : <Shield className="text-slate-600 w-8 h-8 md:w-10 md:h-10" />}
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => generateTeamPDF(team)}
-                      className="text-slate-600 hover:text-green-400 transition-colors p-2 hover:bg-green-500/10 rounded-lg"
-                      title="Print / Save PDF"
-                    >
-                      <Printer size={18} />
-                    </button>
-                    <button
-                      onClick={() => handleEdit(team)}
-                      className="text-slate-600 hover:text-blue-400 transition-colors p-2 hover:bg-blue-500/10 rounded-lg"
-                      title="Edit Team"
-                    >
-                      <Edit3 size={18} />
-                    </button>
-                    <button 
-                      onClick={() => { confirmAction('Delete Team?', `Are you sure you want to delete ${team.name}?\nThis will also remove the Captain and Key Player from the player list.`, () => handleDeleteWithPlayers(team.id)); }}
-                      className="text-slate-600 hover:text-red-500 transition-colors p-2 hover:bg-red-500/10 rounded-lg"
-                      title="Delete Team"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
+                  <h3 className="text-base md:text-lg font-bold text-white group-hover:text-cyan-400 transition-colors text-center line-clamp-2">{team.name}</h3>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div className="bg-slate-900/50 p-3 rounded-xl border border-white/5">
-                    <p className="text-[10px] text-green-400 uppercase font-bold tracking-wider mb-1">Purse</p>
-                    <p className="text-xl font-bold text-white font-mono">₹{team.purseRemaining.toLocaleString()}</p>
-                  </div>
-                  <div className="bg-slate-900/50 p-3 rounded-xl border border-white/5">
-                    <p className="text-[10px] text-blue-400 uppercase font-bold tracking-wider mb-1">Squad</p>
-                    <p className={`text-xl font-bold ${rosterCount >= settings.maxPlayersPerTeam ? 'text-red-400' : 'text-white'}`}>
-                      {rosterCount} <span className="text-sm font-normal text-slate-500">/ {settings.maxPlayersPerTeam}</span>
-                    </p>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center justify-between">
-                     <span>Acquisitions ({teamPlayers.length})</span>
-                     <span className="text-[9px] text-slate-600">(See Print View for full roster)</span>
-                  </h4>
-                  {teamPlayers.length === 0 ? (
-                    <p className="text-sm text-slate-600 italic">No auction players yet.</p>
-                  ) : (
-                    <div className="space-y-2 max-h-32 overflow-y-auto pr-1">
-                      {teamPlayers.map(p => (
-                        <div key={p.id} className="flex justify-between text-sm p-2 bg-slate-800/50 rounded-lg border border-white/5 hover:border-cyan-500/20 transition-colors">
-                          <span className="font-medium text-slate-200">{p.name}</span>
-                          <span className="text-cyan-400 font-mono text-xs">₹{p.soldPrice?.toLocaleString()}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                {/* Action Button */}
+                <div className="mt-auto">
+                  <button
+                    onClick={() => { setSelectedTeamForInfo(team); setShowTeamInfo(true); }}
+                    className="w-full text-cyan-400 hover:text-cyan-300 transition-colors p-2 md:p-3 bg-cyan-500/10 hover:bg-cyan-500/20 rounded-lg flex items-center justify-center gap-2 text-xs md:text-sm font-medium border border-cyan-500/20"
+                    title="View Team Info"
+                  >
+                    <Info size={16} />
+                    <span>Team Info</span>
+                  </button>
                 </div>
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* Team Info Modal */}
+      {showTeamInfo && selectedTeamForInfo && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setShowTeamInfo(false)}>
+          <div className="glass-panel rounded-2xl border border-white/10 max-w-3xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 bg-slate-900/95 backdrop-blur-xl border-b border-white/10 p-4 md:p-6 flex justify-between items-start z-10">
+              <div className="flex items-center gap-4 flex-1">
+                <div className="w-12 h-12 md:w-16 md:h-16 rounded-xl bg-slate-800 border border-white/5 flex items-center justify-center overflow-hidden">
+                   {selectedTeamForInfo.logoUrl ? <img src={selectedTeamForInfo.logoUrl} className="w-full h-full object-cover" /> : <Shield className="text-slate-600 w-6 h-6 md:w-8 md:h-8" />}
+                </div>
+                <div>
+                  <h3 className="text-xl md:text-2xl font-bold text-white">{selectedTeamForInfo.name}</h3>
+                  <p className="text-xs md:text-sm text-slate-400 mt-1">Complete Team Details</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { handleEdit(selectedTeamForInfo); setShowTeamInfo(false); }}
+                  className="text-slate-400 hover:text-blue-400 transition-colors p-2 hover:bg-blue-500/10 rounded-lg border border-slate-700 hover:border-blue-500/30"
+                  title="Edit Team"
+                >
+                  <Edit3 size={18} />
+                </button>
+                <button
+                  onClick={() => { setShowTeamInfo(false); confirmAction('Delete Team?', `Are you sure you want to delete ${selectedTeamForInfo.name}?\nThis will also remove the Captain and Key Player from the player list.`, () => handleDeleteWithPlayers(selectedTeamForInfo.id)); }}
+                  className="text-slate-400 hover:text-red-500 transition-colors p-2 hover:bg-red-500/10 rounded-lg border border-slate-700 hover:border-red-500/30"
+                  title="Delete Team"
+                >
+                  <Trash2 size={18} />
+                </button>
+                <button
+                  onClick={() => generateTeamPDF(selectedTeamForInfo)}
+                  className="text-slate-400 hover:text-green-400 transition-colors p-2 hover:bg-green-500/10 rounded-lg border border-slate-700 hover:border-green-500/30"
+                  title="Print / Save PDF"
+                >
+                  <Printer size={18} />
+                </button>
+                <button
+                  onClick={() => downloadTeamPDF(selectedTeamForInfo)}
+                  className="text-slate-400 hover:text-purple-400 transition-colors p-2 hover:bg-purple-500/10 rounded-lg border border-slate-700 hover:border-purple-500/30"
+                  title="Download PDF"
+                >
+                  <Download size={18} />
+                </button>
+                <button onClick={() => setShowTeamInfo(false)} className="text-slate-400 hover:text-white p-2 hover:bg-white/5 rounded-lg transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 md:p-6 space-y-6">
+              {/* Stats */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-900/50 p-4 rounded-xl border border-white/5">
+                  <p className="text-xs text-green-400 uppercase font-bold tracking-wider mb-1">Purse Remaining</p>
+                  <p className="text-2xl font-bold text-white font-mono">₹{selectedTeamForInfo.purseRemaining.toLocaleString()}</p>
+                </div>
+                <div className="bg-slate-900/50 p-4 rounded-xl border border-white/5">
+                  <p className="text-xs text-blue-400 uppercase font-bold tracking-wider mb-1">Squad Size</p>
+                  <p className={`text-2xl font-bold ${(getTeamPlayers(selectedTeamForInfo).length + 2) >= settings.maxPlayersPerTeam ? 'text-red-400' : 'text-white'}`}>
+                    {getTeamPlayers(selectedTeamForInfo).length + 2} <span className="text-base font-normal text-slate-500">/ {settings.maxPlayersPerTeam}</span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Leadership Core */}
+              <div>
+                <h4 className="text-sm font-bold text-yellow-400 uppercase tracking-widest mb-3 border-b border-yellow-500/20 pb-2">Leadership Core</h4>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-4 bg-slate-800/50 p-3 rounded-xl border border-white/5">
+                    <div className="w-12 h-12 rounded-full bg-slate-800 border border-white/5 flex items-center justify-center overflow-hidden">
+                      {selectedTeamForInfo.captainPhotoUrl ? <img src={selectedTeamForInfo.captainPhotoUrl} className="w-full h-full object-cover" /> : <User className="text-slate-600" size={20} />}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-white">{selectedTeamForInfo.captainName}</p>
+                        <span className="text-[10px] bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full border border-yellow-500/30 font-bold">CAPTAIN</span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1">{selectedTeamForInfo.captainMobile || 'N/A'}</p>
+                    </div>
+                  </div>
+                  
+                  {selectedTeamForInfo.viceCaptainName && (
+                    <div className="flex items-center gap-4 bg-slate-800/50 p-3 rounded-xl border border-white/5">
+                      <div className="w-12 h-12 rounded-full bg-slate-800 border border-white/5 flex items-center justify-center overflow-hidden">
+                        {selectedTeamForInfo.viceCaptainPhotoUrl ? <img src={selectedTeamForInfo.viceCaptainPhotoUrl} className="w-full h-full object-cover" /> : <User className="text-slate-600" size={20} />}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-bold text-white">{selectedTeamForInfo.viceCaptainName}</p>
+                          <span className="text-[10px] bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full border border-purple-500/30 font-bold">KEY PLAYER</span>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1">{selectedTeamForInfo.viceCaptainMobile || 'N/A'}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Auction Acquisitions */}
+              <div>
+                <h4 className="text-sm font-bold text-cyan-400 uppercase tracking-widest mb-3 border-b border-cyan-500/20 pb-2">
+                  Auction Acquisitions ({getTeamPlayers(selectedTeamForInfo).length})
+                </h4>
+                {getTeamPlayers(selectedTeamForInfo).length === 0 ? (
+                  <p className="text-sm text-slate-500 italic text-center py-8">No auction players yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {getTeamPlayers(selectedTeamForInfo).map(p => (
+                      <div key={p.id} className="flex justify-between items-center p-3 bg-slate-800/50 rounded-xl border border-white/5 hover:border-cyan-500/20 transition-colors">
+                        <div className="flex-1">
+                          <p className="font-medium text-white">{p.name}</p>
+                          <div className="flex gap-2 mt-1">
+                            <span className="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full border border-blue-500/30">{p.category}</span>
+                            <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30">{p.experience}</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-cyan-400 font-mono font-bold">₹{p.soldPrice?.toLocaleString()}</p>
+                          <p className="text-[10px] text-slate-500 mt-1">{p.mobileNumber}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Hidden file input for import */}
       <input
